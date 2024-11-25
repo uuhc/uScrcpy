@@ -52,7 +52,9 @@ class MainWindow(QMainWindow):
         self.device_list.clear()
         self.device_list.addItems(devices)
         if devices:
-            self.device_list.itemClicked.connect(self.start_device_projection)
+            self.device_list.itemDoubleClicked.connect(
+                self.start_device_projection
+            )  # 改为双击触发
 
     def start_device_projection(self, item):
         """启动选中设备的投屏"""
