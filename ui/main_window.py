@@ -1,7 +1,19 @@
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QListWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel)
+from loguru import logger
+from PyQt6.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QListWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+)
+from PyQt6.QtGui import QWindow
 from PyQt6.QtCore import Qt
 from core.adb_manager import ADBManager
 from core.scrcpy_client import ScrcpyClient
+from utils.window_manager import WindowManager
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -11,6 +23,7 @@ class MainWindow(QMainWindow):
 
         # 初始化核心功能
         self.adb_manager = ADBManager()
+        self.scrcpy_clients = {}  # 保存设备和 Scrcpy 客户端的映射
 
         # 左侧设备列表
         self.device_list = QListWidget()
@@ -59,5 +72,15 @@ class MainWindow(QMainWindow):
     def start_device_projection(self, item):
         """启动选中设备的投屏"""
         device_serial = item.text()
+
+        if device_serial in self.scrcpy_clients:
+            logger.info(f"Device {device_serial} is already projected. scrcpy_list: {self.scrcpy_clients}")
+            # 如果设备窗口已存在，确保显示到前台
+            client = self.scrcpy_clients[device_serial]
+            if client.window_id:
+                WindowManager.bring_window_to_front(client.window_id)
+            return
+
+        # 启动新的 Scrcpy 客户端
         scrcpy_client = ScrcpyClient(device_serial)
         scrcpy_client.start_scrcpy()
