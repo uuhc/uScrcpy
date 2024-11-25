@@ -8,3 +8,4 @@ requests== 2.32.3
 pillow==11.0.0
 adbutils== 2.8.0
 loguru==0.7.2
+pyobjc==10.3.1

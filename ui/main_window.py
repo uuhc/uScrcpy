@@ -1,6 +1,7 @@
 from loguru import logger
 from PyQt6.QtWidgets import (
     QMainWindow,
+    QMessageBox,
     QWidget,
     QListWidget,
     QVBoxLayout,
@@ -59,6 +60,31 @@ class MainWindow(QMainWindow):
         # 初始化设备列表
         self.refresh_device_list()
 
+    def closeEvent(self, event):
+        """主窗口关闭事件"""
+        # 弹出提示框以确认退出
+        reply = QMessageBox.question(
+            self,
+            "退出",
+            "确定要退出程序并关闭所有设备投屏吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.cleanup_scrcpy_clients()  # 清理所有 Scrcpy 客户端
+            event.accept()  # 接受关闭事件
+        else:
+            event.ignore()  # 忽略关闭事件
+
+    def cleanup_scrcpy_clients(self):
+        """清理所有 Scrcpy 客户端"""
+        for device_serial, client in self.scrcpy_clients.items():
+            if client:
+                client.stop_scrcpy()  # 停止 Scrcpy 客户端进程
+                logger.info(f"Stopped Scrcpy for device {device_serial}")
+        self.scrcpy_clients.clear()
+        logger.info("All Scrcpy clients cleared.")
+
     def refresh_device_list(self):
         """刷新设备列表"""
         devices = self.adb_manager.refresh_devices()
@@ -72,15 +98,60 @@ class MainWindow(QMainWindow):
     def start_device_projection(self, item):
         """启动选中设备的投屏"""
         device_serial = item.text()
+        logger.info(f"scrcpy_clients: {self.scrcpy_clients}")
 
         if device_serial in self.scrcpy_clients:
-            logger.info(f"Device {device_serial} is already projected. scrcpy_list: {self.scrcpy_clients}")
-            # 如果设备窗口已存在，确保显示到前台
+            logger.info(
+                f"Device {device_serial} is already projected. scrcpy_clients: {self.scrcpy_clients}"
+            )
+            # 获取对应的 ScrcpyClient
             client = self.scrcpy_clients[device_serial]
-            if client.window_id:
-                WindowManager.bring_window_to_front(client.window_id)
-            return
+            window_id = client.window_id
+
+            if window_id:
+                # 确认窗口是否仍然有效
+                if not WindowManager.is_window_active(window_id):
+                    logger.warning(
+                        f"Window for device {device_serial} is no longer active. Restarting scrcpy..."
+                    )
+                    # 窗口失效，移除旧客户端并重新启动
+                    del self.scrcpy_clients[device_serial]
+                else:
+                    # 窗口有效，将其置于前台
+                    WindowManager.bring_window_to_front(window_id)
+                    logger.info(
+                        f"Window for device {device_serial} brought to the front."
+                    )
+                    return
+            else:
+                logger.warning(f"Window ID not found for device {device_serial}.")
 
         # 启动新的 Scrcpy 客户端
+        logger.info(f"Starting new scrcpy for device {device_serial}")
         scrcpy_client = ScrcpyClient(device_serial)
         scrcpy_client.start_scrcpy()
+        self.scrcpy_clients[device_serial] = scrcpy_client
+        logger.info(
+            f"Scrcpy started for device {device_serial},scrcpy_clients: {self.scrcpy_clients}"
+        )
+
+        # 嵌入窗口到 UI
+        self.embed_scrcpy_window(scrcpy_client.window_id)
+
+    def embed_scrcpy_window(self, window_id):
+        """嵌入 Scrcpy 窗口到右侧布局"""
+        if not window_id:
+            return
+
+        scrcpy_window = QWindow.fromWinId(window_id)
+        container = self.screen_container.layout()
+        if container:
+            for i in reversed(range(container.count())):
+                container.itemAt(i).widget().setParent(None)
+
+        window_widget = QWidget.createWindowContainer(
+            scrcpy_window, self.screen_container
+        )
+        layout = QVBoxLayout(self.screen_container)
+        layout.addWidget(window_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
